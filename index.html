@@ -1,0 +1,251 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Carton Box ERP</title>
+    <link rel="stylesheet" href="styles.css">
+    <!-- Google Fonts for Premium Feel -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&display=swap" rel="stylesheet">
+</head>
+
+<body>
+    <div class="sidebar">
+        <div class="logo">SP TEX</div>
+        <button class="tab-btn active" onclick="openTab('production')">Stock Inward</button>
+        <button class="tab-btn" onclick="openTab('sales')">Delivery Entry</button>
+        <button class="tab-btn" onclick="openTab('invoice')">GST Invoice</button>
+        <button class="tab-btn" onclick="openTab('stock-report')">Stock Report</button>
+        <button class="tab-btn" onclick="openTab('sales-report')">Sales Report</button>
+        <button class="tab-btn" onclick="openTab('chart-tab')">Sales Chart</button>
+    </div>
+
+    <div id="toast-container"></div>
+    <div class="main-content">
+        <!-- Tab 1: Production Entry -->
+        <div id="production" class="tab-content active">
+            <h2>Stock Inward / Production Entry</h2>
+            <form id="production-form">
+                <div class="form-group">
+                    <label>Date</label>
+                    <input type="date" id="prod-date" required>
+                </div>
+                <div class="form-group">
+                    <label>Board / Prod Order No</label>
+                    <input type="text" id="prod-order-no" required>
+                </div>
+                <div class="row">
+                    <div class="form-group">
+                        <label>Length</label>
+                        <input type="number" id="prod-length" required>
+                    </div>
+                    <div class="form-group">
+                        <label>Width</label>
+                        <input type="number" id="prod-width" required>
+                    </div>
+                    <div class="form-group">
+                        <label>Height</label>
+                        <input type="number" id="prod-height" required>
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label>Flute Type</label>
+                    <select id="prod-flute">
+                        <option value="S">S</option>
+                        <option value="N">N</option>
+                        <option value="B">B</option>
+                        <option value="C">C</option>
+                        <option value="E">E</option>
+                        <option value="BC">BC</option>
+                        <option value="CB">CB</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label>Quantity</label>
+                    <input type="number" id="prod-qty" required>
+                </div>
+                <button type="submit" class="btn-primary">Save Entry</button>
+            </form>
+        </div>
+
+        <!-- Tab 2: Sales Entry -->
+        <div id="sales" class="tab-content">
+            <h2>Delivery / Sales Entry</h2>
+            <form id="sales-form">
+                <div class="form-group">
+                    <label>Date</label>
+                    <input type="date" id="sales-date" required>
+                </div>
+                <div class="form-group">
+                    <label>Customer Name</label>
+                    <input type="text" id="sales-customer" required>
+                </div>
+                <div class="form-group">
+                    <label>PO No</label>
+                    <input type="text" id="sales-po" required>
+                </div>
+                <div class="row">
+                    <div class="form-group">
+                        <label>Length</label>
+                        <input type="number" id="sales-length" required>
+                    </div>
+                    <div class="form-group">
+                        <label>Width</label>
+                        <input type="number" id="sales-width" required>
+                    </div>
+                    <div class="form-group">
+                        <label>Height</label>
+                        <input type="number" id="sales-height" required>
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label>Flute Type</label>
+                    <select id="sales-flute">
+                        <option value="S">S</option>
+                        <option value="N">N</option>
+                        <option value="B">B</option>
+                        <option value="C">C</option>
+                        <option value="E">E</option>
+                        <option value="BC">BC</option>
+                        <option value="CB">CB</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label>Rate Per Box</label>
+                    <input type="number" step="0.01" id="sales-rate" required>
+                </div>
+                <div class="form-group">
+                    <label>Quantity Sold</label>
+                    <input type="number" id="sales-qty" required>
+                </div>
+                <button type="submit" class="btn-primary">Save & Generate Invoice</button>
+            </form>
+        </div>
+
+        <!-- Tab 3: GST Invoices -->
+        <div id="invoice" class="tab-content">
+            <h2>Generated Invoices</h2>
+            <div id="invoice-list">
+                <!-- List will be populated here -->
+            </div>
+            <div id="invoice-preview"
+                style="display:none; border: 1px solid #ccc; padding: 20px; background: white; color: black;">
+                <!-- Printable Area -->
+                <h3 style="text-align: center;">TAX INVOICE</h3>
+                <div id="print-area"></div>
+                <button onclick="printInvoice()">Print</button>
+                <button onclick="closePreview()">Close</button>
+            </div>
+        </div>
+
+        <!-- Tab 4: Stock Report -->
+        <div id="stock-report" class="tab-content">
+            <h2>Real-time Stock Availability</h2>
+            <button class="btn-secondary" onclick="loadStockReport()">Refresh</button>
+            <table class="data-table">
+                <thead>
+                    <tr>
+                        <th>Sl.No</th>
+                        <th>Date</th>
+                        <th>Size (LxWxH)</th>
+                        <th>Flute</th>
+                        <th>Production Qty</th>
+                        <th>Actions</th>
+                    </tr>
+                </thead>
+                <tbody id="stock-table-body">
+                </tbody>
+            </table>
+        </div>
+
+
+        <!-- Edit Modal -->
+        <div id="edit-modal"
+            style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.5); z-index:10000; justify-content:center; align-items:center;">
+            <div style="background:white; padding:20px; border-radius:8px; width:400px; max-width:90%;">
+                <h3>Edit Production</h3>
+                <form id="edit-form">
+                    <input type="hidden" id="edit-id">
+                    <div class="form-group">
+                        <label>Date</label>
+                        <input type="date" id="edit-date" required>
+                    </div>
+                    <div class="form-group">
+                        <label>Order No</label>
+                        <input type="text" id="edit-order-no" required>
+                    </div>
+                    <div class="row">
+                        <div class="form-group">
+                            <label>L</label>
+                            <input type="number" id="edit-length" required>
+                        </div>
+                        <div class="form-group">
+                            <label>W</label>
+                            <input type="number" id="edit-width" required>
+                        </div>
+                        <div class="form-group">
+                            <label>H</label>
+                            <input type="number" id="edit-height" required>
+                        </div>
+                    </div>
+                    <div class="form-group">
+                        <label>Flute</label>
+                        <select id="edit-flute">
+                            <option value="S">S</option>
+                            <option value="N">N</option>
+                            <option value="B">B</option>
+                            <option value="C">C</option>
+                            <option value="E">E</option>
+                            <option value="BC">BC</option>
+                            <option value="CB">CB</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label>Qty</label>
+                        <input type="number" id="edit-qty" required>
+                    </div>
+                    <div style="display:flex; gap:10px; justify-content:flex-end;">
+                        <button type="button" onclick="closeEditModal()"
+                            style="padding:10px; cursor:pointer;">Cancel</button>
+                        <button type="submit" class="btn-primary">Update</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+
+        <!-- Tab 5: Sales Report -->
+        <div id="sales-report" class="tab-content">
+            <h2>Sales & GST Report</h2>
+            <button class="btn-secondary" onclick="loadSalesReport()">Refresh</button>
+            <table class="data-table">
+                <thead>
+                    <tr>
+                        <th>Date</th>
+                        <th>Invoice No</th>
+                        <th>Customer</th>
+                        <th>Size</th>
+                        <th>Qty</th>
+                        <th>Rate</th>
+                        <th>Total</th>
+                    </tr>
+                </thead>
+                <tbody id="sales-table-body">
+                </tbody>
+            </table>
+        </div>
+
+        <!-- Tab 6: Sales Chart -->
+        <div id="chart-tab" class="tab-content">
+            <h2>Monthly Sales Overview</h2>
+            <div
+                style="background:white; padding:20px; border-radius:10px; box-shadow:0 2px 4px rgba(0,0,0,0.1); height:500px;">
+                <canvas id="salesChart"></canvas>
+            </div>
+        </div>
+    </div>
+
+    <script src="renderer.js"></script>
+</body>
+
+</html>
