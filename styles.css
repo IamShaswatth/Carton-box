@@ -72,8 +72,15 @@ body {
 }
 
 @keyframes fadeIn {
-    from { opacity: 0; transform: translateY(10px); }
-    to { opacity: 1; transform: translateY(0); }
+    from {
+        opacity: 0;
+        transform: translateY(10px);
+    }
+
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
 }
 
 h2 {
@@ -93,16 +100,19 @@ label {
     font-weight: 500;
 }
 
-input, select {
+input,
+select {
     width: 100%;
     padding: 10px;
     border: 1px solid var(--border-color);
     border-radius: 6px;
     font-size: 14px;
-    box-sizing: border-box; /* Fix width overflow */
+    box-sizing: border-box;
+    /* Fix width overflow */
 }
 
-input:focus, select:focus {
+input:focus,
+select:focus {
     outline: none;
     border-color: var(--active-tab);
     box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
@@ -138,10 +148,11 @@ input:focus, select:focus {
     background: var(--card-bg);
     border-radius: 8px;
     overflow: hidden;
-    box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
 }
 
-.data-table th, .data-table td {
+.data-table th,
+.data-table td {
     padding: 12px 20px;
     text-align: left;
     border-bottom: 1px solid var(--border-color);
@@ -157,9 +168,12 @@ input:focus, select:focus {
     body * {
         visibility: hidden;
     }
-    #invoice-preview, #invoice-preview * {
+
+    #invoice-preview,
+    #invoice-preview * {
         visibility: visible;
     }
+
     #invoice-preview {
         position: absolute;
         left: 0;
@@ -169,8 +183,9 @@ input:focus, select:focus {
         padding: 0;
         border: none;
     }
+
     button {
-       display: none !important;
+        display: none !important;
     }
 }
 
@@ -183,32 +198,141 @@ input:focus, select:focus {
 }
 
 .toast {
-  background-color: #333;
-  color: white;
-  padding: 12px 24px;
-  border-radius: 4px;
-  margin-bottom: 10px;
-  box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+    background-color: #333;
+    color: white;
+    padding: 12px 24px;
+    border-radius: 4px;
+    margin-bottom: 10px;
+    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
 
-  animation:
-    slideIn 0.35s cubic-bezier(0.22, 1, 0.36, 1) forwards,
-    fadeOut 0.4s ease-in 2.4s forwards;
+    animation:
+        slideIn 0.35s cubic-bezier(0.22, 1, 0.36, 1) forwards,
+        fadeOut 0.4s ease-in 2.4s forwards;
 }
 
 @keyframes slideIn {
-  from {
-    transform: translateY(-10px);
-    opacity: 0;
-  }
-  to {
-    transform: translateY(0);
-    opacity: 1;
-  }
+    from {
+        transform: translateY(-10px);
+        opacity: 0;
+    }
+
+    to {
+        transform: translateY(0);
+        opacity: 1;
+    }
 }
 
 @keyframes fadeOut {
-  to {
-    transform: translateY(-6px);
-    opacity: 0;
-  }
+    to {
+        transform: translateY(-6px);
+        opacity: 0;
+    }
+}
+
+/* New UI Elements */
+.card {
+    background: var(--card-bg);
+    border-radius: 8px;
+    padding: 20px;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+    margin-bottom: 20px;
+    border: 1px solid var(--border-color);
+}
+
+.customer-order-row {
+    background: #f8fafc;
+    border: 1px solid var(--border-color);
+    border-radius: 6px;
+    padding: 15px;
+    margin-bottom: 15px;
+    transition: all 0.2s;
+}
+
+.customer-order-row:hover {
+    border-color: var(--active-tab);
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
+}
+
+.btn-secondary {
+    background: white;
+    border: 1px solid var(--border-color);
+    color: var(--text-color);
+    padding: 8px 16px;
+    border-radius: 6px;
+    cursor: pointer;
+    font-weight: 500;
+}
+
+.btn-secondary:hover {
+    background: #f1f5f9;
+    border-color: #94a3b8;
+}
+
+/* Print Styles */
+@media print {
+    /* Hide everything except the invoice */
+    body * {
+        visibility: hidden;
+    }
+    
+    #invoice-preview, #invoice-preview * {
+        visibility: visible;
+    }
+    
+    #invoice-preview {
+        position: absolute;
+        left: 0;
+        top: 0;
+        width: 100%;
+        background: white !important;
+        border: none !important;
+        padding: 20px !important;
+    }
+    
+    /* Hide buttons in print */
+    #invoice-preview button {
+        display: none !important;
+    }
+    
+    /* Hide sidebar and other UI elements */
+    .sidebar {
+        display: none;
+    }
+    
+    .main-content {
+        margin: 0;
+        padding: 0;
+    }
+    
+    /* Invoice specific print styling */
+    #print-area {
+        font-size: 12pt;
+        line-height: 1.6;
+        color: black;
+    }
+    
+    #print-area table {
+        border-collapse: collapse;
+        width: 100%;
+        margin: 20px 0;
+    }
+    
+    #print-area table th,
+    #print-area table td {
+        border: 1px solid #000;
+        padding: 8px;
+        text-align: left;
+    }
+    
+    #print-area h3 {
+        text-align: center;
+        font-size: 18pt;
+        margin-bottom: 20px;
+    }
+    
+    /* Page breaks */
+    @page {
+        margin: 1cm;
+        size: A4;
+    }
 }

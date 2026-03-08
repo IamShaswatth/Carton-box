@@ -15,10 +15,13 @@
         <div class="logo">SP TEX</div>
         <button class="tab-btn active" onclick="openTab('production')">Stock Inward</button>
         <button class="tab-btn" onclick="openTab('sales')">Delivery Entry</button>
+        <button class="tab-btn" onclick="openTab('customer-request')">Customer Request</button>
         <button class="tab-btn" onclick="openTab('invoice')">GST Invoice</button>
         <button class="tab-btn" onclick="openTab('stock-report')">Stock Report</button>
         <button class="tab-btn" onclick="openTab('sales-report')">Sales Report</button>
         <button class="tab-btn" onclick="openTab('chart-tab')">Sales Chart</button>
+        <button class="tab-btn" onclick="openTab('board-entry')">Board Entry</button>
+        <button class="tab-btn" onclick="openTab('order-automation')">Order Automation</button>
     </div>
 
     <div id="toast-container"></div>
@@ -123,6 +126,82 @@
             </form>
         </div>
 
+        <!-- Tab 2.5: Customer Request -->
+        <div id="customer-request" class="tab-content">
+            <h2>Customer Request Management</h2>
+            <div class="card">
+                <h3>Add New Customer Request</h3>
+                <form id="customer-request-form">
+                    <div class="form-group">
+                        <label>Date</label>
+                        <input type="date" id="cr-date" required>
+                    </div>
+                    <div class="form-group">
+                        <label>Customer Name</label>
+                        <input type="text" id="cr-customer" required>
+                    </div>
+                    <div class="row">
+                        <div class="form-group">
+                            <label>Length (mm)</label>
+                            <input type="number" id="cr-length" required>
+                        </div>
+                        <div class="form-group">
+                            <label>Width (mm)</label>
+                            <input type="number" id="cr-width" required>
+                        </div>
+                        <div class="form-group">
+                            <label>Height (mm)</label>
+                            <input type="number" id="cr-height" required>
+                        </div>
+                    </div>
+                    <div class="row">
+                        <div class="form-group">
+                            <label>Flute Type</label>
+                            <select id="cr-flute">
+                                <option value="S">S</option>
+                                <option value="N">N</option>
+                                <option value="B">B</option>
+                                <option value="C">C</option>
+                                <option value="E">E</option>
+                                <option value="BC">BC</option>
+                                <option value="CB">CB</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label>Quantity</label>
+                            <input type="number" id="cr-quantity" required>
+                        </div>
+                        <div class="form-group">
+                            <label>Rate Per Box</label>
+                            <input type="number" step="0.01" id="cr-rate" required>
+                        </div>
+                    </div>
+                    <button type="submit" class="btn-primary">Save Customer Request</button>
+                </form>
+            </div>
+
+            <div style="margin-top: 30px;">
+                <h3>Pending Customer Requests</h3>
+                <button class="btn-secondary" onclick="loadCustomerRequests()">Refresh</button>
+                <table class="data-table" style="margin-top: 10px;">
+                    <thead>
+                        <tr>
+                            <th>Date</th>
+                            <th>Customer Name</th>
+                            <th>Size (LxWxH)</th>
+                            <th>Flute</th>
+                            <th>Quantity</th>
+                            <th>Rate</th>
+                            <th>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody id="customer-request-table-body">
+                        <!-- Customer requests will be populated here -->
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
         <!-- Tab 3: GST Invoices -->
         <div id="invoice" class="tab-content">
             <h2>Generated Invoices</h2>
@@ -130,12 +209,14 @@
                 <!-- List will be populated here -->
             </div>
             <div id="invoice-preview"
-                style="display:none; border: 1px solid #ccc; padding: 20px; background: white; color: black;">
+                style="display:none; border: 1px solid #ccc; padding: 30px; background: white; color: black; max-width: 800px; margin: 20px auto; box-shadow: 0 2px 8px rgba(0,0,0,0.1);">
                 <!-- Printable Area -->
-                <h3 style="text-align: center;">TAX INVOICE</h3>
+                <h3 style="text-align: center; margin-bottom: 30px; border-bottom: 2px solid #333; padding-bottom: 10px;">TAX INVOICE</h3>
                 <div id="print-area"></div>
-                <button onclick="printInvoice()">Print</button>
-                <button onclick="closePreview()">Close</button>
+                <div style="margin-top: 30px; text-align: center; padding-top: 20px; border-top: 1px dashed #ccc;">
+                    <button onclick="printInvoice()" class="btn-primary" style="margin-right: 10px;">Print Invoice</button>
+                    <button onclick="closePreview()" class="btn-secondary">Close</button>
+                </div>
             </div>
         </div>
 
@@ -241,6 +322,81 @@
             <div
                 style="background:white; padding:20px; border-radius:10px; box-shadow:0 2px 4px rgba(0,0,0,0.1); height:500px;">
                 <canvas id="salesChart"></canvas>
+            </div>
+        </div>
+
+        <!-- Tab 7: Board Entry -->
+        <div id="board-entry" class="tab-content">
+            <h2>Raw Board Inventory</h2>
+            <div class="card">
+                <h3>Add New Board Stock</h3>
+                <form id="board-form" style="display: flex; gap: 10px; align-items: flex-end; flex-wrap: wrap;">
+                    <div class="form-group" style="flex: 1; min-width: 120px;">
+                        <label>Quality</label>
+                        <select id="board-quality" style="width: 100%; padding: 8px;">
+                            <option value="S">S</option>
+                            <option value="N">N</option>
+                            <option value="B">B</option>
+                            <option value="C">C</option>
+                            <option value="E">E</option>
+                            <option value="BC">BC</option>
+                            <option value="CB">CB</option>
+                        </select>
+                    </div>
+                    <div class="form-group" style="flex: 1; min-width: 100px;">
+                        <label>Length (mm)</label>
+                        <input type="number" id="board-length" required style="width: 100%; padding: 8px;">
+                    </div>
+                    <div class="form-group" style="flex: 1; min-width: 100px;">
+                        <label>Width (mm)</label>
+                        <input type="number" id="board-width" required style="width: 100%; padding: 8px;">
+                    </div>
+                    <div class="form-group" style="flex: 1; min-width: 100px;">
+                        <label>Quantity</label>
+                        <input type="number" id="board-qty" required style="width: 100%; padding: 8px;">
+                    </div>
+                    <button type="submit" class="btn-primary" style="height: 38px; margin-bottom: 2px;">Add
+                        Stock</button>
+                </form>
+            </div>
+
+            <button class="btn-secondary" onclick="loadBoards()">Refresh List</button>
+            <table class="data-table" style="margin-top: 10px;">
+                <thead>
+                    <tr>
+                        <th>Quality</th>
+                        <th>Size (LxW)</th>
+                        <th>Quantity</th>
+                        <th>Action</th>
+                    </tr>
+                </thead>
+                <tbody id="board-list-body">
+                    <!-- Boards -->
+                </tbody>
+            </table>
+        </div>
+
+        <!-- Tab 8: Order Automation -->
+        <div id="order-automation" class="tab-content">
+            <h2>Order Optimization & Automation</h2>
+            <div class="card">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
+                    <h3>Customer Orders</h3>
+                    <button class="btn-secondary" onclick="addCustomerRow()">+ Add Customer</button>
+                </div>
+
+                <div id="automation-forms-container">
+                    <!-- Dynamic Forms -->
+                </div>
+
+                <div style="margin-top: 20px; text-align: right;">
+                    <button class="btn-primary" onclick="calculateOptimization()">Calculate Best Fit</button>
+                </div>
+            </div>
+
+            <div id="optimization-results" style="margin-top: 30px; display: none;">
+                <h3>Optimization Results</h3>
+                <div id="results-content"></div>
             </div>
         </div>
     </div>

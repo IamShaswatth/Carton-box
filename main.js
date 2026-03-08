@@ -20,6 +20,9 @@ async function createWindow() {
     }
 
     mainWindow.loadFile('index.html');
+    
+    // Open DevTools for debugging
+    mainWindow.webContents.openDevTools();
 }
 
 app.whenReady().then(() => {
@@ -85,5 +88,90 @@ ipcMain.handle('get-monthly-sales', async (event) => {
     } catch (e) {
         console.error(e);
         return [];
+    }
+});
+
+// Board IPC Handlers
+ipcMain.handle('add-board', async (event, data) => {
+    return await db.addBoard(data);
+});
+
+ipcMain.handle('get-boards', async (event) => {
+    return await db.getBoards();
+});
+
+ipcMain.handle('delete-board', async (event, id) => {
+    try {
+        return await db.deleteBoard(id);
+    } catch (e) {
+        console.error(e);
+        return { success: false, error: e.message };
+    }
+});
+
+// Customer Request IPC Handlers
+ipcMain.handle('add-customer-request', async (event, data) => {
+    try {
+        return await db.addCustomerRequest(data);
+    } catch (e) {
+        console.error(e);
+        return { success: false, error: e.message };
+    }
+});
+
+ipcMain.handle('get-customer-requests', async (event) => {
+    try {
+        return await db.getCustomerRequests();
+    } catch (e) {
+        console.error(e);
+        return [];
+    }
+});
+
+ipcMain.handle('get-all-customer-requests', async (event) => {
+    try {
+        return await db.getAllCustomerRequests();
+    } catch (e) {
+        console.error(e);
+        return [];
+    }
+});
+
+ipcMain.handle('deliver-customer-request', async (event, data) => {
+    console.log('=== IPC deliver-customer-request called ===');
+    console.log('Received data:', JSON.stringify(data));
+    try {
+        const result = await db.deliverCustomerRequest(data.requestId, data.deliveryData);
+        console.log('Database result:', result);
+        return result;
+    } catch (e) {
+        console.error('Error in deliver-customer-request handler:', e);
+        return { success: false, error: e.message };
+    }
+});
+
+ipcMain.handle('delete-customer-request', async (event, id) => {
+    try {
+        return await db.deleteCustomerRequest(id);
+    } catch (e) {
+        console.error(e);
+        return { success: false, error: e.message };
+    }
+});
+
+// Optimization IPC Handler
+const optimizer = require('./optimizer');
+ipcMain.handle('calculate-optimization', async (event, data) => {
+    try {
+        // data = { customers: [{ name, quality, length, width, height, quantity }, ... ] }
+        // 1. Get current board stock
+        const boards = await db.getBoards();
+
+        // 2. Run optimization
+        const result = optimizer.calculateOptimization(data.customers, boards);
+        return { success: true, result };
+    } catch (e) {
+        console.error(e);
+        return { success: false, error: e.message };
     }
 });

@@ -75,6 +75,41 @@ async function initDB() {
             )
         `);
 
+        // Boards table for Raw Material Stock
+        await pool.query(`
+            CREATE TABLE IF NOT EXISTS boards (
+                board_id INT AUTO_INCREMENT PRIMARY KEY,
+                quality VARCHAR(50),
+                length INT,
+                width INT,
+                quantity INT
+            )
+        `);
+
+        // Customer Requests table
+        await pool.query(`
+            CREATE TABLE IF NOT EXISTS customer_requests (
+                request_id INT AUTO_INCREMENT PRIMARY KEY,
+                customer_name VARCHAR(255),
+                flute_type ENUM('S', 'N', 'B', 'C', 'E', 'BC', 'CB'),
+                box_length INT,
+                box_width INT,
+                box_height INT,
+                quantity INT,
+                rate_per_box DECIMAL(10, 2),
+                status ENUM('pending', 'delivered') DEFAULT 'pending',
+                created_date DATE,
+                delivered_date DATE NULL
+            )
+        `);
+
+        // Remove weight column if it exists (migration)
+        try {
+            await pool.query(`ALTER TABLE customer_requests DROP COLUMN weight`);
+        } catch (err) {
+            // Column might not exist, ignore error
+        }
+
         console.log("Database initialized successfully");
         return true;
     } catch (err) {
@@ -288,6 +323,149 @@ async function updateProduction(data) {
 }
 
 
+
+// Board Functions
+async function addBoard(data) {
+    const connection = await pool.getConnection();
+    try {
+        await connection.query(
+            'INSERT INTO boards (quality, length, width, quantity) VALUES (?, ?, ?, ?)',
+            [data.quality, data.length, data.width, data.quantity]
+        );
+        return { success: true };
+    } catch (err) {
+        console.error(err);
+        return { success: false, error: err.message };
+    } finally {
+        connection.release();
+    }
+}
+
+async function getBoards() {
+    const [rows] = await pool.query('SELECT * FROM boards ORDER BY quality, length DESC, width DESC');
+    return rows;
+}
+
+async function deleteBoard(id) {
+    try {
+        await pool.query('DELETE FROM boards WHERE board_id = ?', [id]);
+        return { success: true };
+    } catch (err) {
+        return { success: false, error: err.message };
+    }
+}
+
+// Customer Request Functions
+async function addCustomerRequest(data) {
+    try {
+        await pool.query(
+            'INSERT INTO customer_requests (customer_name, flute_type, box_length, box_width, box_height, quantity, rate_per_box, created_date) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+            [data.customerName, data.flute, data.length, data.width, data.height, data.quantity, data.rate, data.date]
+        );
+        return { success: true };
+    } catch (err) {
+        console.error(err);
+        return { success: false, error: err.message };
+    }
+}
+
+async function getCustomerRequests() {
+    const [rows] = await pool.query('SELECT * FROM customer_requests WHERE status = "pending" ORDER BY created_date DESC, request_id DESC');
+    return rows;
+}
+
+async function getAllCustomerRequests() {
+    const [rows] = await pool.query('SELECT * FROM customer_requests ORDER BY created_date DESC, request_id DESC');
+    return rows;
+}
+
+async function deliverCustomerRequest(requestId, deliveryData) {
+    console.log('=== deliverCustomerRequest called ===');
+    console.log('requestId:', requestId);
+    console.log('deliveryData:', deliveryData);
+    console.log('pool exists:', !!pool);
+    
+    if (!pool) {
+        throw new Error('Database pool not initialized');
+    }
+    
+    const connection = await pool.getConnection();
+    try {
+        await connection.beginTransaction();
+
+        // Get the customer request details
+        const [requestRows] = await connection.query('SELECT * FROM customer_requests WHERE request_id = ?', [requestId]);
+        console.log('Found request rows:', requestRows.length);
+        if (requestRows.length === 0) {
+            throw new Error('Request not found');
+        }
+        const request = requestRows[0];
+
+        console.log('Processing delivery for request:', request);
+
+        // Check stock
+        const [stockRows] = await connection.query(
+            'SELECT stock_quantity FROM stock WHERE box_length=? AND box_width=? AND box_height=? AND flute_type=?',
+            [request.box_length, request.box_width, request.box_height, request.flute_type]
+        );
+
+        if (stockRows.length === 0 || stockRows[0].stock_quantity < request.quantity) {
+            throw new Error('Insufficient stock. Available: ' + (stockRows.length > 0 ? stockRows[0].stock_quantity : 0) + ', Required: ' + request.quantity);
+        }
+
+        const invoiceNo = 'INV-' + Date.now();
+
+        // Add sales entry
+        await connection.query(
+            'INSERT INTO sales (date, customer_name, customer_po_no, box_length, box_width, box_height, flute_type, rate_per_box, quantity_sold, invoice_no) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+            [deliveryData.date, request.customer_name, deliveryData.poNo || 'N/A', request.box_length, request.box_width, request.box_height, request.flute_type, request.rate_per_box, request.quantity, invoiceNo]
+        );
+
+        // Update stock
+        await connection.query(
+            'UPDATE stock SET stock_quantity = stock_quantity - ? WHERE box_length=? AND box_width=? AND box_height=? AND flute_type=?',
+            [request.quantity, request.box_length, request.box_width, request.box_height, request.flute_type]
+        );
+
+        // Record Invoice Summary
+        const baseAmount = request.rate_per_box * request.quantity;
+        const cgst = baseAmount * 0.025;
+        const sgst = baseAmount * 0.025;
+        const total = baseAmount + cgst + sgst;
+
+        await connection.query(
+            'INSERT INTO invoices (invoice_no, invoice_date, customer_name, total_amount, cgst_amount, sgst_amount) VALUES (?, ?, ?, ?, ?, ?)',
+            [invoiceNo, deliveryData.date, request.customer_name, total, cgst, sgst]
+        );
+
+        // Update customer request status
+        await connection.query(
+            'UPDATE customer_requests SET status = "delivered", delivered_date = ? WHERE request_id = ?',
+            [deliveryData.date, requestId]
+        );
+
+        await connection.commit();
+        console.log('Delivery processed successfully. Invoice:', invoiceNo);
+        return { success: true, invoiceNo };
+    } catch (err) {
+        await connection.rollback();
+        console.error('Error in deliverCustomerRequest:', err);
+        throw err;
+    } finally {
+        connection.release();
+    }
+}
+
+async function deleteCustomerRequest(id) {
+    try {
+        await pool.query('DELETE FROM customer_requests WHERE request_id = ?', [id]);
+        return { success: true };
+    } catch (err) {
+        return { success: false, error: err.message };
+    }
+}
+
+
 module.exports = {
     initDB,
     addProduction,
@@ -296,5 +474,13 @@ module.exports = {
     getReportData,
     deleteProduction,
     updateProduction,
-    getMonthlySales
+    getMonthlySales,
+    addBoard,
+    getBoards,
+    deleteBoard,
+    addCustomerRequest,
+    getCustomerRequests,
+    getAllCustomerRequests,
+    deliverCustomerRequest,
+    deleteCustomerRequest
 };
