@@ -29,9 +29,17 @@ async function initDB() {
                 box_height INT,
                 flute_type ENUM('S', 'N', 'B', 'C', 'E', 'BC', 'CB'),
                 quantity_produced INT,
-                remarks VARCHAR(255)
+                remarks VARCHAR(255),
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
         `);
+        
+        // Add created_at column if it doesn't exist (migration)
+        try {
+            await pool.query(`ALTER TABLE production ADD COLUMN created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP`);
+        } catch (err) {
+            // Column might already exist, ignore error
+        }
 
         await pool.query(`
             CREATE TABLE IF NOT EXISTS sales (
@@ -45,9 +53,17 @@ async function initDB() {
                 flute_type ENUM('S', 'N', 'B', 'C', 'E', 'BC', 'CB'),
                 rate_per_box DECIMAL(10, 2),
                 quantity_sold INT,
-                invoice_no VARCHAR(50)
+                invoice_no VARCHAR(50),
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
         `);
+        
+        // Add created_at column if it doesn't exist (migration)
+        try {
+            await pool.query(`ALTER TABLE sales ADD COLUMN created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP`);
+        } catch (err) {
+            // Column might already exist, ignore error
+        }
 
         await pool.query(`
             CREATE TABLE IF NOT EXISTS stock (
@@ -109,6 +125,23 @@ async function initDB() {
         } catch (err) {
             // Column might not exist, ignore error
         }
+
+        // Stock Movements table for manual stock adjustments
+        await pool.query(`
+            CREATE TABLE IF NOT EXISTS stock_movements (
+                movement_id INT AUTO_INCREMENT PRIMARY KEY,
+                date DATE NOT NULL,
+                box_length INT,
+                box_width INT,
+                box_height INT,
+                flute_type ENUM('S', 'N', 'B', 'C', 'E', 'BC', 'CB'),
+                quantity INT,
+                movement_type ENUM('OUT', 'IN') DEFAULT 'OUT',
+                reason VARCHAR(255),
+                user_name VARCHAR(100),
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        `);
 
         console.log("Database initialized successfully");
         return true;
@@ -213,9 +246,95 @@ async function addSales(data) {
 }
 
 async function getStockReport(filters) {
-    // User requested: sl.no(auto increment),date, size , flute type , quantity
-    // This maps to the PRODUCTION history.
-    const [rows] = await pool.query('SELECT * FROM production ORDER BY date DESC, production_id DESC');
+    // User requested: Show both production (stock IN) and sales/deliveries (stock OUT)
+    // Combined view to track all stock movements including manual adjustments
+    
+    // Get production entries (STOCK IN)
+    const [productionRows] = await pool.query(`
+        SELECT 
+            date,
+            'STOCK IN' as type,
+            board_or_production_order_no as reference,
+            box_length,
+            box_width,
+            box_height,
+            flute_type,
+            quantity_produced as quantity,
+            NULL as customer_name,
+            NULL as user_name,
+            created_at,
+            production_id as id
+        FROM production
+    `);
+
+    // Get sales/delivery entries (STOCK OUT)
+    const [salesRows] = await pool.query(`
+        SELECT 
+            date,
+            'STOCK OUT' as type,
+            invoice_no as reference,
+            box_length,
+            box_width,
+            box_height,
+            flute_type,
+            -quantity_sold as quantity,
+            customer_name,
+            NULL as user_name,
+            created_at,
+            sales_id as id
+        FROM sales
+    `);
+
+    // Get manual stock movements (both IN and OUT)
+    const [movementRows] = await pool.query(`
+        SELECT 
+            date,
+            CONCAT('MANUAL ', movement_type) as type,
+            reason as reference,
+            box_length,
+            box_width,
+            box_height,
+            flute_type,
+            CASE WHEN movement_type = 'OUT' THEN -quantity ELSE quantity END as quantity,
+            NULL as customer_name,
+            user_name,
+            created_at,
+            movement_id as id
+        FROM stock_movements
+    `);
+
+    // Combine and sort - prioritize by timestamp if available, then by date
+    const combined = [...productionRows, ...salesRows, ...movementRows];
+    combined.sort((a, b) => {
+        // If both have timestamps, sort by timestamp
+        if (a.created_at && b.created_at) {
+            return new Date(b.created_at) - new Date(a.created_at);
+        }
+        // If only one has timestamp, prioritize it (more recent)
+        if (a.created_at && !b.created_at) return -1;
+        if (!a.created_at && b.created_at) return 1;
+        // Otherwise sort by date, then ID
+        const dateCompare = new Date(b.date) - new Date(a.date);
+        if (dateCompare !== 0) return dateCompare;
+        return b.id - a.id;
+    });
+
+    return combined;
+}
+
+async function getCurrentStockSummary() {
+    // Get current available stock from stock table
+    const [rows] = await pool.query(`
+        SELECT 
+            box_length,
+            box_width,
+            box_height,
+            flute_type,
+            stock_quantity
+        FROM stock
+        WHERE stock_quantity > 0
+        ORDER BY flute_type, box_length DESC, box_width DESC
+    `);
     return rows;
 }
 
@@ -355,6 +474,124 @@ async function deleteBoard(id) {
     }
 }
 
+async function reduceBoardStock(quality, length, width, quantityToReduce) {
+    const connection = await pool.getConnection();
+    try {
+        // Find the board matching the specs
+        const [boards] = await connection.query(
+            'SELECT board_id, quantity FROM boards WHERE quality = ? AND length = ? AND width = ? LIMIT 1',
+            [quality, length, width]
+        );
+
+        if (boards.length === 0) {
+            return { success: false, error: 'Board not found in stock' };
+        }
+
+        const board = boards[0];
+        const newQuantity = board.quantity - quantityToReduce;
+
+        if (newQuantity < 0) {
+            return { success: false, error: 'Insufficient board quantity' };
+        }
+
+        // Update the board quantity
+        await connection.query(
+            'UPDATE boards SET quantity = ? WHERE board_id = ?',
+            [newQuantity, board.board_id]
+        );
+
+        return { success: true, newQuantity };
+    } catch (err) {
+        console.error(err);
+        return { success: false, error: err.message };
+    } finally {
+        connection.release();
+    }
+}
+
+async function updateStockFromOptimization(boardData, cuts) {
+    const connection = await pool.getConnection();
+    try {
+        await connection.beginTransaction();
+
+        // 1. Reduce raw board stock
+        const [boards] = await connection.query(
+            'SELECT board_id, quantity FROM boards WHERE quality = ? AND length = ? AND width = ? LIMIT 1',
+            [boardData.quality, boardData.length, boardData.width]
+        );
+
+        if (boards.length === 0) {
+            await connection.rollback();
+            return { success: false, error: 'Board not found in stock' };
+        }
+
+        const board = boards[0];
+        if (board.quantity < 1) {
+            await connection.rollback();
+            return { success: false, error: 'Insufficient board quantity' };
+        }
+
+        await connection.query(
+            'UPDATE boards SET quantity = quantity - 1 WHERE board_id = ?',
+            [board.board_id]
+        );
+
+        // 2. Group cuts by box dimensions and add to production
+        const boxGroups = {};
+        cuts.forEach(cut => {
+            const key = `${cut.boxL}-${cut.boxW}-${cut.boxH}`;
+            if (!boxGroups[key]) {
+                boxGroups[key] = {
+                    length: cut.boxL,
+                    width: cut.boxW,
+                    height: cut.boxH,
+                    quantity: 0
+                };
+            }
+            boxGroups[key].quantity++;
+        });
+
+        // 3. Add production entries AND update stock for each unique box size
+        const today = new Date().toISOString().split('T')[0];
+        for (const key in boxGroups) {
+            const box = boxGroups[key];
+            
+            // Add production entry
+            await connection.query(
+                'INSERT INTO production (date, board_or_production_order_no, box_length, box_width, box_height, flute_type, quantity_produced) VALUES (?, ?, ?, ?, ?, ?, ?)',
+                [today, 'AUTO-CUT', box.length, box.width, box.height, boardData.quality, box.quantity]
+            );
+
+            // Update stock table (same logic as addProduction)
+            const [existingStock] = await connection.query(
+                'SELECT stock_quantity FROM stock WHERE box_length=? AND box_width=? AND box_height=? AND flute_type=?',
+                [box.length, box.width, box.height, boardData.quality]
+            );
+
+            if (existingStock.length > 0) {
+                await connection.query(
+                    'UPDATE stock SET stock_quantity = stock_quantity + ? WHERE box_length=? AND box_width=? AND box_height=? AND flute_type=?',
+                    [box.quantity, box.length, box.width, box.height, boardData.quality]
+                );
+            } else {
+                await connection.query(
+                    'INSERT INTO stock (box_length, box_width, box_height, flute_type, stock_quantity) VALUES (?, ?, ?, ?, ?)',
+                    [box.length, box.width, box.height, boardData.quality, box.quantity]
+                );
+            }
+        }
+
+        await connection.commit();
+        return { success: true, boxesAdded: cuts.length };
+    } catch (err) {
+        await connection.rollback();
+        console.error(err);
+        return { success: false, error: err.message };
+    } finally {
+        connection.release();
+    }
+}
+
 // Customer Request Functions
 async function addCustomerRequest(data) {
     try {
@@ -465,12 +702,146 @@ async function deleteCustomerRequest(id) {
     }
 }
 
+// Stock Movement Functions
+async function addStockMovement(data) {
+    const connection = await pool.getConnection();
+    try {
+        await connection.beginTransaction();
+
+        // Check if enough stock is available for OUT movement
+        if (data.movementType === 'OUT') {
+            const [stockRows] = await connection.query(
+                'SELECT stock_quantity FROM stock WHERE box_length=? AND box_width=? AND box_height=? AND flute_type=?',
+                [data.length, data.width, data.height, data.flute]
+            );
+
+            if (stockRows.length === 0 || stockRows[0].stock_quantity < data.quantity) {
+                throw new Error('Insufficient stock. Available: ' + (stockRows.length > 0 ? stockRows[0].stock_quantity : 0));
+            }
+
+            // Reduce stock
+            await connection.query(
+                'UPDATE stock SET stock_quantity = stock_quantity - ? WHERE box_length=? AND box_width=? AND box_height=? AND flute_type=?',
+                [data.quantity, data.length, data.width, data.height, data.flute]
+            );
+        } else {
+            // For IN movement, add to stock
+            const [existingStock] = await connection.query(
+                'SELECT stock_quantity FROM stock WHERE box_length=? AND box_width=? AND box_height=? AND flute_type=?',
+                [data.length, data.width, data.height, data.flute]
+            );
+
+            if (existingStock.length > 0) {
+                await connection.query(
+                    'UPDATE stock SET stock_quantity = stock_quantity + ? WHERE box_length=? AND box_width=? AND box_height=? AND flute_type=?',
+                    [data.quantity, data.length, data.width, data.height, data.flute]
+                );
+            } else {
+                await connection.query(
+                    'INSERT INTO stock (box_length, box_width, box_height, flute_type, stock_quantity) VALUES (?, ?, ?, ?, ?)',
+                    [data.length, data.width, data.height, data.flute, data.quantity]
+                );
+            }
+        }
+
+        // Record the movement
+        await connection.query(
+            'INSERT INTO stock_movements (date, box_length, box_width, box_height, flute_type, quantity, movement_type, reason, user_name) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
+            [data.date, data.length, data.width, data.height, data.flute, data.quantity, data.movementType, data.reason, data.userName]
+        );
+
+        await connection.commit();
+        return { success: true };
+    } catch (err) {
+        await connection.rollback();
+        throw err;
+    } finally {
+        connection.release();
+    }
+}
+
+async function getStockMovements() {
+    const [rows] = await pool.query(`
+        SELECT 
+            movement_id,
+            date,
+            box_length,
+            box_width,
+            box_height,
+            flute_type,
+            quantity,
+            movement_type,
+            reason,
+            user_name,
+            created_at
+        FROM stock_movements 
+        ORDER BY created_at DESC
+    `);
+    console.log('getStockMovements: Retrieved', rows.length, 'movements');
+    if (rows.length > 0) {
+        console.log('First movement (latest):', rows[0].movement_id, rows[0].created_at, rows[0].movement_type, rows[0].reason);
+        console.log('Last movement (oldest):', rows[rows.length-1].movement_id, rows[rows.length-1].created_at, rows[rows.length-1].movement_type, rows[rows.length-1].reason);
+    }
+    return rows;
+}
+
+async function deleteStockMovement(id) {
+    const connection = await pool.getConnection();
+    try {
+        await connection.beginTransaction();
+
+        // Get movement details to reverse it
+        const [rows] = await connection.query('SELECT * FROM stock_movements WHERE movement_id = ?', [id]);
+        if (rows.length === 0) throw new Error('Movement not found');
+        const movement = rows[0];
+
+        // Reverse the stock change
+        if (movement.movement_type === 'OUT') {
+            // Was taken out, so add it back
+            const [existingStock] = await connection.query(
+                'SELECT stock_quantity FROM stock WHERE box_length=? AND box_width=? AND box_height=? AND flute_type=?',
+                [movement.box_length, movement.box_width, movement.box_height, movement.flute_type]
+            );
+
+            if (existingStock.length > 0) {
+                await connection.query(
+                    'UPDATE stock SET stock_quantity = stock_quantity + ? WHERE box_length=? AND box_width=? AND box_height=? AND flute_type=?',
+                    [movement.quantity, movement.box_length, movement.box_width, movement.box_height, movement.flute_type]
+                );
+            } else {
+                await connection.query(
+                    'INSERT INTO stock (box_length, box_width, box_height, flute_type, stock_quantity) VALUES (?, ?, ?, ?, ?)',
+                    [movement.box_length, movement.box_width, movement.box_height, movement.flute_type, movement.quantity]
+                );
+            }
+        } else {
+            // Was added in, so reduce it
+            await connection.query(
+                'UPDATE stock SET stock_quantity = stock_quantity - ? WHERE box_length=? AND box_width=? AND box_height=? AND flute_type=?',
+                [movement.quantity, movement.box_length, movement.box_width, movement.box_height, movement.flute_type]
+            );
+        }
+
+        // Delete the movement record
+        await connection.query('DELETE FROM stock_movements WHERE movement_id = ?', [id]);
+
+        await connection.commit();
+        return { success: true };
+    } catch (err) {
+        await connection.rollback();
+        throw err;
+    } finally {
+        connection.release();
+    }
+}
+
 
 module.exports = {
     initDB,
     addProduction,
     addSales,
     getStockReport,
+    getCurrentStockSummary,
     getReportData,
     deleteProduction,
     updateProduction,
@@ -478,9 +849,14 @@ module.exports = {
     addBoard,
     getBoards,
     deleteBoard,
+    reduceBoardStock,
+    updateStockFromOptimization,
     addCustomerRequest,
     getCustomerRequests,
     getAllCustomerRequests,
     deliverCustomerRequest,
-    deleteCustomerRequest
+    deleteCustomerRequest,
+    addStockMovement,
+    getStockMovements,
+    deleteStockMovement
 };

@@ -152,10 +152,19 @@ function calculateOptimization(orders, boards) {
 
         groupResult.produced = openBoards.map(ob => ({
             boardSize: `${ob.sourceBoard.length}x${ob.sourceBoard.width}`,
+            boardLength: ob.sourceBoard.length,
+            boardWidth: ob.sourceBoard.width,
+            boardQuality: ob.sourceBoard.quality,
             cuts: ob.cuts,
             utilization: ((ob.usedArea / (ob.sourceBoard.length * ob.sourceBoard.width)) * 100).toFixed(2),
-            sheetCount: ob.cuts.length
+            sheetCount: ob.cuts.length,
+            leftoverPieces: findLargestLeftoverPieces(ob.root)
         }));
+
+        // Calculate recommended board for unproduced sheets (80-90% utilization target)
+        if (groupResult.unproduced.length > 0) {
+            groupResult.recommendation = calculateBoardRecommendation(groupResult.unproduced, quality);
+        }
 
         results.push(groupResult);
     }
@@ -182,6 +191,82 @@ function splitNode(node, w, h) {
     node.down = { x: node.x, y: node.y + h, w: node.w, h: node.h - h };
     node.right = { x: node.x + w, y: node.y, w: node.w - w, h: h };
     return node;
+}
+
+// Find usable leftover pieces (unused rectangular areas)
+function findLargestLeftoverPieces(root) {
+    const leftoverPieces = [];
+    
+    function traverse(node) {
+        if (!node) return;
+        
+        // If node is not used and has meaningful dimensions (at least 100x100mm to be useful)
+        if (!node.used && node.w >= 100 && node.h >= 100) {
+            leftoverPieces.push({
+                length: Math.floor(node.w),
+                width: Math.floor(node.h),
+                area: node.w * node.h
+            });
+        }
+        
+        // Traverse children
+        if (node.right) traverse(node.right);
+        if (node.down) traverse(node.down);
+    }
+    
+    traverse(root);
+    
+    // Sort by area descending and return top pieces
+    leftoverPieces.sort((a, b) => b.area - a.area);
+    
+    // Return largest pieces (limit to 3 pieces to avoid clutter)
+    return leftoverPieces.slice(0, 3);
+}
+
+// Calculate recommended board size for unproduced sheets (targeting 80-90% utilization)
+function calculateBoardRecommendation(unproducedSheets, quality) {
+    if (unproducedSheets.length === 0) return null;
+
+    // Get the largest sheet dimensions
+    let maxLength = 0;
+    let maxWidth = 0;
+    let totalArea = 0;
+
+    unproducedSheets.forEach(sheet => {
+        maxLength = Math.max(maxLength, sheet.sheetL);
+        maxWidth = Math.max(maxWidth, sheet.sheetW);
+        totalArea += (sheet.sheetL * sheet.sheetW);
+    });
+
+    // Target 85% utilization (middle of 80-90%)
+    const targetUtilization = 0.85;
+    const requiredBoardArea = totalArea / targetUtilization;
+
+    // Calculate board dimensions - try to make it somewhat square for better cutting
+    // but ensure it fits the largest sheet
+    let boardLength = Math.max(maxLength, Math.ceil(Math.sqrt(requiredBoardArea)));
+    let boardWidth = Math.max(maxWidth, Math.ceil(requiredBoardArea / boardLength));
+
+    // Round up to nearest 10mm for practical board sizes
+    boardLength = Math.ceil(boardLength / 10) * 10;
+    boardWidth = Math.ceil(boardWidth / 10) * 10;
+
+    // Calculate actual utilization with recommended size
+    const actualUtilization = ((totalArea / (boardLength * boardWidth)) * 100).toFixed(2);
+
+    // Calculate how many boards needed
+    const sheetsPerBoard = Math.floor((boardLength * boardWidth) / (maxLength * maxWidth));
+    const boardsNeeded = Math.ceil(unproducedSheets.length / Math.max(1, sheetsPerBoard));
+
+    return {
+        quality: quality,
+        length: boardLength,
+        width: boardWidth,
+        quantity: boardsNeeded,
+        expectedUtilization: actualUtilization,
+        sheetsCount: unproducedSheets.length,
+        totalArea: totalArea
+    };
 }
 
 module.exports = { calculateOptimization };

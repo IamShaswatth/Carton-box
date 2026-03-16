@@ -21,6 +21,7 @@
         <button class="tab-btn" onclick="openTab('sales-report')">Sales Report</button>
         <button class="tab-btn" onclick="openTab('chart-tab')">Sales Chart</button>
         <button class="tab-btn" onclick="openTab('board-entry')">Board Entry</button>
+        <button class="tab-btn" onclick="openTab('stock-movement')">Stock Move Out</button>
         <button class="tab-btn" onclick="openTab('order-automation')">Order Automation</button>
     </div>
 
@@ -209,9 +210,9 @@
                 <!-- List will be populated here -->
             </div>
             <div id="invoice-preview"
-                style="display:none; border: 1px solid #ccc; padding: 30px; background: white; color: black; max-width: 800px; margin: 20px auto; box-shadow: 0 2px 8px rgba(0,0,0,0.1);">
+                style="display:none; border: 1px solid #ccc; padding: 30px; background: white; color: black; max-width: 800px; margin: 20px auto; box-shadow: 0 2px 8px rgba(0,0,0,0.1); box-sizing: border-box;">
                 <!-- Printable Area -->
-                <h3 style="text-align: center; margin-bottom: 30px; border-bottom: 2px solid #333; padding-bottom: 10px;">TAX INVOICE</h3>
+                <h3 style="text-align: center; margin-bottom: 30px; border-bottom: 2px solid #333; padding-bottom: 10px; box-sizing: border-box;">TAX INVOICE</h3>
                 <div id="print-area"></div>
                 <div style="margin-top: 30px; text-align: center; padding-top: 20px; border-top: 1px dashed #ccc;">
                     <button onclick="printInvoice()" class="btn-primary" style="margin-right: 10px;">Print Invoice</button>
@@ -222,16 +223,30 @@
 
         <!-- Tab 4: Stock Report -->
         <div id="stock-report" class="tab-content">
-            <h2>Real-time Stock Availability</h2>
+            <h2>Stock Report & Movement</h2>
+            
+            <!-- Current Stock Summary -->
+            <div id="current-stock-summary" style="margin-bottom:20px; padding:15px; background:#f0f9ff; border-radius:8px; border:2px solid #3b82f6;">
+                <h3 style="margin:0 0 10px 0; color:#1e40af;">📦 Current Available Stock</h3>
+                <div id="stock-summary-content">
+                    <p style="color:#666;">Loading...</p>
+                </div>
+            </div>
+            
+            <!-- Stock Movement History -->
+            <h3 style="margin-top:30px;">Stock Movement History</h3>
             <button class="btn-secondary" onclick="loadStockReport()">Refresh</button>
-            <table class="data-table">
+            <table class="data-table" style="margin-top:10px;">
                 <thead>
                     <tr>
                         <th>Sl.No</th>
                         <th>Date</th>
+                        <th>Time</th>
+                        <th>Type</th>
                         <th>Size (LxWxH)</th>
                         <th>Flute</th>
-                        <th>Production Qty</th>
+                        <th>Quantity</th>
+                        <th>Reference/Customer</th>
                         <th>Actions</th>
                     </tr>
                 </thead>
@@ -374,6 +389,98 @@
                     <!-- Boards -->
                 </tbody>
             </table>
+        </div>
+
+        <!-- Tab 7.5: Stock Movement -->
+        <div id="stock-movement" class="tab-content">
+            <h2>Manual Stock Movement</h2>
+            <div class="card">
+                <h3>Record Stock Movement (Move Out/In)</h3>
+                <form id="stock-movement-form">
+                    <div class="form-group">
+                        <label>Date</label>
+                        <input type="date" id="sm-date" required>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label>Your Name / User</label>
+                        <input type="text" id="sm-username" placeholder="Enter your name" required>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label>Movement Type</label>
+                        <select id="sm-movement-type" required>
+                            <option value="OUT">Move Out (Reduce Stock)</option>
+                            <option value="IN">Move In (Add Stock)</option>
+                        </select>
+                    </div>
+                    
+                    <div class="row">
+                        <div class="form-group">
+                            <label>Length (mm)</label>
+                            <input type="number" id="sm-length" required>
+                        </div>
+                        <div class="form-group">
+                            <label>Width (mm)</label>
+                            <input type="number" id="sm-width" required>
+                        </div>
+                        <div class="form-group">
+                            <label>Height (mm)</label>
+                            <input type="number" id="sm-height" required>
+                        </div>
+                    </div>
+                    
+                    <div class="row">
+                        <div class="form-group">
+                            <label>Flute Type</label>
+                            <select id="sm-flute" required>
+                                <option value="S">S</option>
+                                <option value="N">N</option>
+                                <option value="B">B</option>
+                                <option value="C">C</option>
+                                <option value="E">E</option>
+                                <option value="BC">BC</option>
+                                <option value="CB">CB</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label>Quantity</label>
+                            <input type="number" id="sm-quantity" required>
+                        </div>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label>Reason / Remarks</label>
+                        <input type="text" id="sm-reason" placeholder="e.g., Damage, Sample, Adjustment, etc." required>
+                    </div>
+                    
+                    <button type="submit" class="btn-primary">Record Movement</button>
+                </form>
+            </div>
+
+            <div class="card">
+                <h3>Stock Movement History</h3>
+                <button class="btn-secondary" onclick="loadStockMovements()">Refresh</button>
+                <table class="data-table">
+                    <thead>
+                        <tr>
+                            <th>#</th>
+                            <th>Date</th>
+                            <th>Time</th>
+                            <th>Type</th>
+                            <th>Size (LxWxH)</th>
+                            <th>Flute</th>
+                            <th>Quantity</th>
+                            <th>Reason</th>
+                            <th>User</th>
+                            <th>Action</th>
+                        </tr>
+                    </thead>
+                    <tbody id="stock-movement-table-body">
+                        <!-- Stock movements will be populated here -->
+                    </tbody>
+                </table>
+            </div>
         </div>
 
         <!-- Tab 8: Order Automation -->

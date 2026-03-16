@@ -60,6 +60,10 @@ ipcMain.handle('get-stock-report', async (event, filters) => {
     return await db.getStockReport(filters);
 });
 
+ipcMain.handle('get-current-stock-summary', async (event) => {
+    return await db.getCurrentStockSummary();
+});
+
 ipcMain.handle('get-sales-report', async (event, filters) => {
     return await db.getReportData('sales', filters);
 });
@@ -159,6 +163,34 @@ ipcMain.handle('delete-customer-request', async (event, id) => {
     }
 });
 
+// Stock Movement IPC Handlers
+ipcMain.handle('add-stock-movement', async (event, data) => {
+    try {
+        return await db.addStockMovement(data);
+    } catch (e) {
+        console.error(e);
+        return { success: false, error: e.message };
+    }
+});
+
+ipcMain.handle('get-stock-movements', async (event) => {
+    try {
+        return await db.getStockMovements();
+    } catch (e) {
+        console.error(e);
+        return [];
+    }
+});
+
+ipcMain.handle('delete-stock-movement', async (event, id) => {
+    try {
+        return await db.deleteStockMovement(id);
+    } catch (e) {
+        console.error(e);
+        return { success: false, error: e.message };
+    }
+});
+
 // Optimization IPC Handler
 const optimizer = require('./optimizer');
 ipcMain.handle('calculate-optimization', async (event, data) => {
@@ -170,6 +202,26 @@ ipcMain.handle('calculate-optimization', async (event, data) => {
         // 2. Run optimization
         const result = optimizer.calculateOptimization(data.customers, boards);
         return { success: true, result };
+    } catch (e) {
+        console.error(e);
+        return { success: false, error: e.message };
+    }
+});
+
+ipcMain.handle('reduce-board-stock', async (event, data) => {
+    try {
+        const result = await db.reduceBoardStock(data.quality, data.length, data.width, data.quantity);
+        return result;
+    } catch (e) {
+        console.error(e);
+        return { success: false, error: e.message };
+    }
+});
+
+ipcMain.handle('update-stock-from-optimization', async (event, data) => {
+    try {
+        const result = await db.updateStockFromOptimization(data.board, data.cuts);
+        return result;
     } catch (e) {
         console.error(e);
         return { success: false, error: e.message };
